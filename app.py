@@ -80,8 +80,8 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     debug = os.getenv("FLASK_DEBUG", "True").lower() in ("true", "1", "yes")
     print(f"\n========================================================")
-    print(f"🚀 Healthcare Agent API running at http://127.0.0.1:{port}")
-    print(f"📖 Swagger Docs available at http://127.0.0.1:{port}/api/docs")
+    print(f"[*] Healthcare Agent API running at http://127.0.0.1:{port}")
+    print(f"[*] Swagger Docs available at http://127.0.0.1:{port}/api/docs")
     print(f"========================================================\n")
     app.run(host="0.0.0.0", port=port, debug=debug)
 

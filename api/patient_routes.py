@@ -116,8 +116,24 @@ def analyze_symptoms_and_recommend():
         # ==========================================
         # STEP 3: Doctor Matching Agent
         # ==========================================
-        match_result = matching_agent.match_doctors(specialization_name=primary_spec_name)
-        matched_doctors = match_result.get("doctors", [])
+        candidate_specs = [primary_spec_name]
+        for r in symptom_result.get("rankings", []):
+            spec_name = r.get("specialization") or r.get("name")
+            if spec_name and spec_name not in candidate_specs:
+                candidate_specs.append(spec_name)
+        if "General Physician" not in candidate_specs:
+            candidate_specs.append("General Physician")
+
+        matched_doctors = []
+        seen_doctor_ids = set()
+        for s_name in candidate_specs:
+            m_res = matching_agent.match_doctors(specialization_name=s_name)
+            for d in m_res.get("doctors", []):
+                if d["id"] not in seen_doctor_ids:
+                    seen_doctor_ids.add(d["id"])
+                    matched_doctors.append(d)
+            if len(matched_doctors) >= 4:
+                break
 
         workflow_trace.append({
             "step": 3,
