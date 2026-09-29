@@ -4,6 +4,7 @@ import logging
 import requests
 from typing import Dict, Any, List
 from backend.config import Config
+from backend.services.prompt_loader import load_prompt
 
 logger = logging.getLogger("SymptomAgent")
 logger.setLevel(logging.INFO)
@@ -86,6 +87,46 @@ HIGH_URGENCY_TRIGGERS = [
     "severe abdominal pain", "fainting", "severe migraine", "fracture"
 ]
 
+GREETING_PATTERNS = [
+    r"\b(hi|hello|hey|heya|howdy|hola|yo|sup|hiya|gm|gn)\b",
+    r"\bgood\s*(morning|afternoon|evening|day|night)\b",
+    r"\b(how\s*are\s*you|how\s*r\s*u|how\s*do\s*you\s*do|what's\s*up|whats\s*up)\b",
+    r"\b(who\s*are\s*you|what\s*are\s*you|what\s*can\s*you\s*do|introduce\s*yourself|what\s*is\s*your\s*name)\b",
+    r"\b(help|help\s*me|can\s*you\s*help|need\s*help|greetings|welcome|hi\s*there|hello\s*there)\b",
+    r"\b(thank\s*you|thanks|thx|bye|goodbye|see\s*you|ok|okay|fine|cool|sure|yes|no)\b",
+]
+
+ADDITIONAL_PHYSICAL_SYMPTOM_KEYWORDS = [
+    "pain", "ache", "aches", "aching", "hurt", "hurts", "hurting", "sore", "soreness",
+    "burn", "burning", "infection", "infected", "inflammation", "inflamed",
+    "feverish", "high temp", "temperature", "shivering", "shivers", "sweat", "sweating",
+    "sneeze", "sneezing", "vomit", "vomiting", "throw up", "throwing up",
+    "nauseous", "dizzy", "bleed", "bleeding", "blood", "wound", "injury", "injured",
+    "fractured", "broken bone", "broken", "bruise", "bruised", "cut", "laceration",
+    "itch", "itchy", "blisters", "allergy", "allergic", "reaction",
+    "sick", "sickness", "ill", "illness", "tired", "tiredness", "exhausted",
+    "weak", "cramp", "cramping", "diarrhea", "loose motion", "constipation",
+    "bloating", "gas", "indigestion", "acidity", "heartburn", "acid reflux",
+    "breath", "breathing", "wheezing", "asthma", "suffocating", "chest tightness",
+    "pressure in chest", "spasm", "twitching", "convulsion", "faint",
+    "insomnia", "sleepless", "swollen", "stiff", "stiffness",
+    "head", "forehead", "throat", "neck", "shoulder", "arm", "elbow", "wrist",
+    "hand", "finger", "fingers", "chest", "rib", "ribs", "abdomen", "stomach",
+    "belly", "tummy", "waist", "hip", "groin", "leg", "thigh", "knee", "shin",
+    "calf", "ankle", "foot", "feet", "toe", "toes", "back", "lower back",
+    "spine", "muscle", "muscles", "bone", "bones", "joint", "joints",
+    "skin", "eye", "eyes", "ear", "ears", "nose", "mouth", "lip", "lips",
+    "tongue", "tooth", "teeth", "gum", "gums", "jaw"
+]
+
+# Precomputed aggregate of all medical and physical symptom keywords
+ALL_SYMPTOM_KEYWORDS = set()
+for _spec_info in TAXONOMY.values():
+    for _kw in _spec_info["keywords"]:
+        ALL_SYMPTOM_KEYWORDS.add(_kw.lower())
+for _kw in ADDITIONAL_PHYSICAL_SYMPTOM_KEYWORDS:
+    ALL_SYMPTOM_KEYWORDS.add(_kw.lower())
+
 class SymptomAgent:
     """
     AI Symptom Analysis Agent
@@ -99,6 +140,69 @@ class SymptomAgent:
         self.llm_model = Config.LLM_MODEL
         self.llm_timeout = Config.LLM_TIMEOUT
 
+    def _classify_intent(self, text: str) -> Dict[str, Any]:
+        """
+        Classifies incoming input into:
+        1. Clinical symptom consultation (physical health issue present)
+        2. Friendly greeting (hi, hello, etc.)
+        3. Off-topic query (non-health, coding, math, general chitchat)
+        """
+        cleaned = text.strip()
+        cleaned_lower = cleaned.lower()
+
+        # Check if any physical symptom or anatomical health keyword is present
+        has_symptom = False
+        matched_symptoms = []
+        for kw in ALL_SYMPTOM_KEYWORDS:
+            pattern = r"\b" + re.escape(kw) + r"\b"
+            if re.search(pattern, cleaned_lower):
+                has_symptom = True
+                matched_symptoms.append(kw)
+
+        if has_symptom:
+            return {
+                "is_medical_query": True,
+                "intent_type": "clinical",
+                "matched_symptoms": matched_symptoms,
+            }
+
+        # Check for greeting or introductory intent
+        is_greeting = False
+        for g_pat in GREETING_PATTERNS:
+            if re.search(g_pat, cleaned_lower):
+                is_greeting = True
+                break
+
+        if is_greeting:
+            return {
+                "success": True,
+                "is_medical_query": False,
+                "intent_type": "greeting",
+                "agent_message": load_prompt("greeting_response.txt"),
+                "summary": "Greeting detected without clinical symptoms. Waiting for physical symptom description.",
+                "primary_specialization": None,
+                "confidence_score": 0.0,
+                "urgency_level": "none",
+                "extracted_keywords": [],
+                "rankings": [],
+                "source": "Clinical Intent Classifier",
+            }
+
+        # Otherwise, the query is off-topic / non-medical
+        return {
+            "success": True,
+            "is_medical_query": False,
+            "intent_type": "off_topic",
+            "agent_message": load_prompt("off_topic_response.txt"),
+            "summary": "Non-clinical query detected. Prompted user to describe physical health symptoms.",
+            "primary_specialization": None,
+            "confidence_score": 0.0,
+            "urgency_level": "none",
+            "extracted_keywords": [],
+            "rankings": [],
+            "source": "Clinical Intent Classifier",
+        }
+
     def analyze(self, symptom_text: str) -> Dict[str, Any]:
         """
         Analyze patient's text and return matched specialties, confidence scores, and urgency.
@@ -109,6 +213,12 @@ class SymptomAgent:
 
         cleaned_text = symptom_text.strip()
         logger.info(f"Analyzing symptom text: {cleaned_text}")
+
+        # Intent classification: verify if the input is a greeting, off-topic, or clinical
+        intent = self._classify_intent(cleaned_text)
+        if not intent.get("is_medical_query", True):
+            logger.info(f"Non-clinical query detected ({intent.get('intent_type')}). Skipping specialist matching.")
+            return intent
 
         # Attempt remote LLM analysis if endpoint configured in .env
         if self.llm_url and self.llm_model:
@@ -127,21 +237,10 @@ class SymptomAgent:
             logger.info(f"Calling LLM service at {self.llm_url} with model {self.llm_model}...")
 
             valid_specs = list(self.taxonomy.keys())
-            prompt = (
-                f"You are an expert AI Clinical Triage Specialist in a Hospital Appointment System.\n"
-                f"Patient Symptoms: \"{text}\"\n\n"
-                f"Allowed Specializations (choose exactly one for primary_specialization):\n"
-                f"{json.dumps(valid_specs)}\n\n"
-                f"Respond ONLY with a valid JSON object strictly matching this format:\n"
-                f"```json\n"
-                f"{{\n"
-                f"  \"primary_specialization\": \"<one of the allowed specializations>\",\n"
-                f"  \"confidence_score\": <float between 0.60 and 0.99>,\n"
-                f"  \"urgency_level\": \"<low | medium | high | emergency>\",\n"
-                f"  \"extracted_keywords\": [\"keyword1\", \"keyword2\"],\n"
-                f"  \"summary\": \"<Concise 1-2 sentence medical triage reasoning>\"\n"
-                f"}}\n"
-                f"```"
+            prompt_template = load_prompt("clinical_triage.txt")
+            prompt = prompt_template.format(
+                symptom_text=text,
+                allowed_specializations=json.dumps(valid_specs)
             )
 
             payload = {
@@ -184,6 +283,8 @@ class SymptomAgent:
                     logger.info(f"LLM analysis succeeded: {primary_spec} ({conf})")
                     return {
                         "success": True,
+                        "is_medical_query": True,
+                        "intent_type": "clinical",
                         "raw_text": text,
                         "primary_specialization": primary_spec,
                         "confidence_score": conf,
@@ -266,14 +367,22 @@ class SymptomAgent:
                 })
 
         logger.info(f"Taxonomy analysis completed: {top_spec} ({confidence})")
+        summary_template = load_prompt("clinical_summary.txt")
+        summary_text = summary_template.format(
+            specialization=top_spec,
+            confidence_percent=int(confidence * 100),
+            detected_symptoms=", ".join(all_extracted_keywords) if all_extracted_keywords else "general complaint"
+        )
         return {
             "success": True,
+            "is_medical_query": True,
+            "intent_type": "clinical",
             "raw_text": symptom_text,
             "primary_specialization": top_spec,
             "confidence_score": confidence,
             "urgency_level": urgency,
             "extracted_keywords": list(all_extracted_keywords),
             "rankings": rankings,
-            "summary": f"Identified primary need for {top_spec} with {int(confidence * 100)}% confidence based on detected symptoms: {', '.join(all_extracted_keywords) if all_extracted_keywords else 'general complaint'}.",
+            "summary": summary_text,
             "source": "Clinical Taxonomy Rules",
         }

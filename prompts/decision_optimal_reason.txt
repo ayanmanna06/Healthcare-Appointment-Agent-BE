@@ -1,0 +1,1 @@
+{doctor_name} was selected as the optimal match with a {score_pct}% score. Key factors: high patient rating ({rating}/5.0), {experience_years} years clinical experience, low queue load ({appointment_load} active patients), and earliest available opening {slot_desc}.

@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
 class SymptomInputSchema(BaseModel):
-    symptoms: str = Field(..., min_length=3, description="Patient natural language symptoms description")
+    symptoms: str = Field(..., min_length=1, description="Patient natural language symptoms description")
     patient_id: Optional[int] = None
     preferred_date: Optional[str] = None  # YYYY-MM-DD (optional filter)
     auto_book: Optional[bool] = False

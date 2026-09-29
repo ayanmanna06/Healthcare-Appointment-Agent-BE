@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 20px; }}
+        .container {{ max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; }}
+        .header {{ background: #0EA5E9; color: white; padding: 25px; text-align: center; }}
+        .content {{ padding: 25px; color: #334155; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2 style="margin:0;">Upcoming Appointment Reminder</h2>
+        </div>
+        <div class="content">
+            <p>Hello <strong>{patient_name}</strong>,</p>
+            <p>This is a quick reminder for your upcoming medical appointment:</p>
+            <ul>
+                <li><strong>Doctor:</strong> {clean_doc} ({specialization})</li>
+                <li><strong>Date:</strong> {appointment_date}</li>
+                <li><strong>Time:</strong> {start_time}</li>
+            </ul>
+            <p>If you need to reschedule or cancel, please do so via the patient portal at least 2 hours in advance.</p>
+        </div>
+    </div>
+</body>
+</html>

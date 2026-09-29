@@ -1,0 +1,1 @@
+Hello! I am your HealthAgent Clinical AI Assistant. How can I assist you with your health today? Please describe any physical symptoms, discomfort, or health concerns you are experiencing (such as fever, headache, back pain, cough, or chest tightness), and I will match you with the appropriate medical specialist.

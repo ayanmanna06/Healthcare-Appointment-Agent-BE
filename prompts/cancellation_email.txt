@@ -1,0 +1,7 @@
+<div style="font-family:sans-serif; padding: 20px; max-width: 600px; margin:0 auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+    <h3 style="color: #ef4444;">Appointment Cancellation Notice</h3>
+    <p>Dear {patient_name},</p>
+    <p>Your appointment on <strong>{appointment_date}</strong> with <strong>{clean_doc}</strong> has been cancelled.</p>
+    <p><strong>Reason:</strong> {reason}</p>
+    <p>You can re-book anytime using the Healthcare AI Agent.</p>
+</div>

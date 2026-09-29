@@ -69,7 +69,10 @@ def create_app(config_class=Config):
     # Initialize APScheduler background jobs
     with app.app_context():
         # Auto-create tables if using SQLite or fresh db
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception as dbe:
+            logger.warning(f"db.create_all warning: {dbe}")
         init_scheduler(app)
 
     return app

@@ -10,6 +10,7 @@ class MedicalNote(db.Model):
     diagnosis = db.Column(db.Text, nullable=False)
     prescription = db.Column(db.Text, nullable=True)
     clinical_notes = db.Column(db.Text, nullable=True)
+    prescription_file_url = db.Column(db.String(500), nullable=True)
     follow_up_date = db.Column(db.Date, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -24,6 +25,7 @@ class MedicalNote(db.Model):
             "doctor_id": self.doctor_id,
             "diagnosis": self.diagnosis,
             "prescription": self.prescription,
+            "prescription_file_url": self.prescription_file_url,
             "clinical_notes": self.clinical_notes,
             "follow_up_date": self.follow_up_date.isoformat() if self.follow_up_date else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,

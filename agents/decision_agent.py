@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 from backend.config import Config
 from backend.extensions import db
 from backend.models.agent_decision import AgentDecision
+from backend.services.prompt_loader import load_prompt
 
 logger = logging.getLogger("DecisionAgent")
 logger.setLevel(logging.INFO)
@@ -130,12 +131,19 @@ class DecisionAgent:
             best_score = best_candidate["composite_score"]
             breakdown = best_candidate["score_breakdown"]
 
-            slot_desc = f"on {best_slot['date']} at {best_slot['start_time']}" if best_slot else "with flexible scheduling"
-
-            decision_reason = (
-                f"{best_doctor['full_name']} was selected as the optimal match with a {int(best_score * 100)}% score. "
-                f"Key factors: high patient rating ({best_doctor['rating']}/5.0), {best_doctor['experience_years']} years "
-                f"clinical experience, low queue load ({best_candidate['appointment_load']} active patients), and earliest available opening {slot_desc}."
+            slot_desc = (
+                f"on {best_slot['date']} at {best_slot['start_time']}"
+                if best_slot
+                else "with flexible scheduling"
+            )
+            optimal_reason_template = load_prompt("decision_optimal_reason.txt")
+            decision_reason = optimal_reason_template.format(
+                doctor_name=best_doctor.get("full_name", "Doctor"),
+                score_pct=int(best_score * 100),
+                rating=best_doctor.get("rating", 4.8),
+                experience_years=best_doctor.get("experience_years", 5),
+                appointment_load=best_candidate.get("appointment_load", 0),
+                slot_desc=slot_desc
             )
 
             # Persist decision to database if symptom_id is provided
