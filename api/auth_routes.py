@@ -1,3 +1,4 @@
+from datetime import time
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 from backend.extensions import db
@@ -5,6 +6,7 @@ from backend.models.user import User
 from backend.models.role import Role
 from backend.models.patient import Patient
 from backend.models.doctor import Doctor
+from backend.models.doctor_availability import DoctorAvailability
 from backend.schemas.auth_schemas import RegisterSchema, LoginSchema
 from backend.services.auth_service import generate_token, token_required
 
@@ -65,15 +67,34 @@ def register():
                 room_number=validated_data.room_number or "Room 201",
             )
             db.session.add(doctor)
+            db.session.flush()
+
+            # Create default weekly availability slots (Mon-Fri 09:00 - 17:00, 30 min intervals)
+            for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]:
+                avail = DoctorAvailability(
+                    doctor_id=doctor.id,
+                    day_of_week=day,
+                    start_time=time(9, 0),
+                    end_time=time(17, 0),
+                    slot_duration_minutes=30,
+                    is_active=True,
+                )
+                db.session.add(avail)
 
         db.session.commit()
         token = generate_token(user)
+
+        user_info = user.to_dict()
+        if user.patient_profile:
+            user_info["patient"] = user.patient_profile.to_dict()
+        if user.doctor_profile:
+            user_info["doctor"] = user.doctor_profile.to_dict()
 
         return jsonify({
             "success": True,
             "message": "User registered successfully.",
             "token": token,
-            "user": user.to_dict(),
+            "user": user_info,
         }), 201
 
     except ValidationError as ve:
@@ -145,6 +166,12 @@ def update_profile(current_user, token_payload):
         if "phone" in data:
             current_user.phone = data["phone"]
 
+        if "new_password" in data and data["new_password"]:
+            current_pw = data.get("current_password", "")
+            if not current_user.check_password(current_pw):
+                return jsonify({"success": False, "error": "Current password is incorrect."}), 400
+            current_user.set_password(data["new_password"])
+
         if current_user.patient_profile:
             patient = current_user.patient_profile
             for field in ["gender", "blood_group", "address", "emergency_contact", "medical_history"]:
@@ -153,13 +180,26 @@ def update_profile(current_user, token_payload):
 
         if current_user.doctor_profile:
             doctor = current_user.doctor_profile
+            if "specialization_id" in data and data["specialization_id"]:
+                try:
+                    doctor.specialization_id = int(data["specialization_id"])
+                except (ValueError, TypeError):
+                    pass
             for field in ["qualification", "experience_years", "consultation_fee", "bio", "room_number"]:
                 if field in data:
                     setattr(doctor, field, data[field])
 
         db.session.commit()
-        return jsonify({"success": True, "message": "Profile updated successfully.", "user": current_user.to_dict()}), 200
+
+        user_info = current_user.to_dict()
+        if current_user.patient_profile:
+            user_info["patient"] = current_user.patient_profile.to_dict()
+        if current_user.doctor_profile:
+            user_info["doctor"] = current_user.doctor_profile.to_dict()
+
+        return jsonify({"success": True, "message": "Profile updated successfully.", "user": user_info}), 200
 
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
+

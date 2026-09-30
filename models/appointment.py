@@ -39,5 +39,7 @@ class Appointment(db.Model):
             "chief_complaint": self.chief_complaint,
             "booking_source": self.booking_source,
             "cancellation_reason": self.cancellation_reason,
+            "has_notes": bool(self.medical_notes),
+            "medical_note": self.medical_notes[0].to_dict() if self.medical_notes else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

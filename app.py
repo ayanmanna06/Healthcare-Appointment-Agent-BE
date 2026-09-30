@@ -49,14 +49,29 @@ def create_app(config_class=Config):
     def bad_request(e):
         return jsonify({"success": False, "error": "Bad request", "message": str(e)}), 400
 
-    @app.errorhandler(404)
-    def not_found(e):
-        return jsonify({"success": False, "error": "Endpoint not found"}), 404
-
     @app.errorhandler(500)
     def internal_error(e):
         logger.error(f"Internal server error: {str(e)}", exc_info=True)
         return jsonify({"success": False, "error": "Internal server error"}), 500
+
+    # Serve built React frontend in production if dist directory exists
+    frontend_dist = os.path.join(_PARENT_DIR, "frontend", "dist")
+    if os.path.exists(frontend_dist):
+        from flask import send_from_directory
+
+        @app.route("/", defaults={"path": ""})
+        @app.route("/<path:path>")
+        def serve_frontend(path):
+            if path.startswith("api/"):
+                return jsonify({"success": False, "error": "API endpoint not found"}), 404
+            file_path = os.path.join(frontend_dist, path)
+            if path != "" and os.path.exists(file_path):
+                return send_from_directory(frontend_dist, path)
+            return send_from_directory(frontend_dist, "index.html")
+    else:
+        @app.errorhandler(404)
+        def not_found(e):
+            return jsonify({"success": False, "error": "Endpoint not found"}), 404
 
     @app.route("/api/health", methods=["GET"])
     def health_check():
