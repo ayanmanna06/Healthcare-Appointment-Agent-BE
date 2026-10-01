@@ -1,0 +1,1 @@
+{doctor_name} is a verified specialist in {specialization_name} with {experience_years} years clinical experience, rated {rating}/5.0, earliest opening {slot_desc}.

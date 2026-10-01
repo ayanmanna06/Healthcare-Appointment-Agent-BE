@@ -3,6 +3,7 @@ from datetime import datetime, date, time, timedelta
 from typing import Dict, Any, List, Optional
 from backend.extensions import db
 from backend.models.doctor_availability import DoctorAvailability
+from backend.models.doctor_date_override import DoctorDateOverride
 from backend.models.appointment import Appointment
 from backend.models.doctor import Doctor
 
@@ -71,6 +72,14 @@ class AvailabilityAgent:
                 time_str = appt.start_time.strftime("%H:%M")
                 booked_slots.add((date_str, time_str))
 
+            # Query date-specific overrides (holidays, leaves, custom single-date shifts)
+            date_overrides = DoctorDateOverride.query.filter(
+                DoctorDateOverride.doctor_id == doctor_id,
+                DoctorDateOverride.override_date >= start_date,
+                DoctorDateOverride.override_date <= end_date
+            ).all()
+            override_map = {ov.override_date: ov for ov in date_overrides}
+
             available_slots = []
             now_dt = datetime.now()
 
@@ -79,9 +88,39 @@ class AvailabilityAgent:
                 cur_date = start_date + timedelta(days=day_offset)
                 cur_dow = cur_date.weekday()  # 0=Monday, 6=Sunday
 
+                # Check if doctor has an override for this specific calendar date
+                if cur_date in override_map:
+                    ov = override_map[cur_date]
+                    if not ov.is_available:
+                        # Doctor is on Leave / Day Off for this specific date
+                        continue
+                    elif ov.start_time and ov.end_time:
+                        # Custom working hours for this specific calendar date
+                        duration = ov.slot_duration_minutes or 30
+                        slot_start = datetime.combine(cur_date, ov.start_time)
+                        slot_end_boundary = datetime.combine(cur_date, ov.end_time)
+
+                        while slot_start + timedelta(minutes=duration) <= slot_end_boundary:
+                            cur_time_str = slot_start.strftime("%H:%M")
+                            cur_date_str = cur_date.isoformat()
+                            end_time_str = (slot_start + timedelta(minutes=duration)).strftime("%H:%M")
+
+                            if slot_start > now_dt:
+                                if (cur_date_str, cur_time_str) not in booked_slots:
+                                    available_slots.append({
+                                        "date": cur_date_str,
+                                        "start_time": cur_time_str,
+                                        "end_time": end_time_str,
+                                        "slot_datetime": slot_start.isoformat(),
+                                        "day_name": cur_date.strftime("%A"),
+                                    })
+
+                            slot_start += timedelta(minutes=duration)
+                        continue
+
+                # Standard recurring weekly schedule for this day of week
                 if cur_dow in schedule_map:
                     for av in schedule_map[cur_dow]:
-                        # Generate intervals
                         duration = av.slot_duration_minutes or 30
                         slot_start = datetime.combine(cur_date, av.start_time)
                         slot_end_boundary = datetime.combine(cur_date, av.end_time)
@@ -91,7 +130,6 @@ class AvailabilityAgent:
                             cur_date_str = cur_date.isoformat()
                             end_time_str = (slot_start + timedelta(minutes=duration)).strftime("%H:%M")
 
-                            # Slot must be in the future
                             if slot_start > now_dt:
                                 if (cur_date_str, cur_time_str) not in booked_slots:
                                     available_slots.append({

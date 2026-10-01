@@ -21,6 +21,7 @@ from backend.schemas.appointment_schemas import (
     RescheduleAppointmentSchema,
 )
 from backend.services.auth_service import token_required, role_required
+from backend.services.prompt_loader import load_prompt
 
 patient_bp = Blueprint("patient_bp", __name__)
 
@@ -78,6 +79,41 @@ def analyze_symptoms_and_recommend():
         # STEP 2: AI Symptom Analysis Agent
         # ==========================================
         symptom_result = symptom_agent.analyze(validated.symptoms)
+
+        # Handle non-clinical queries early (greetings, off-topic, general chatter)
+        if not symptom_result.get("is_medical_query", True):
+            workflow_trace.append({
+                "step": 2,
+                "agent": "AI Symptom Analysis Agent",
+                "status": "completed",
+                "output": {
+                    "intent_type": symptom_result.get("intent_type"),
+                    "agent_message": symptom_result.get("agent_message"),
+                    "summary": symptom_result.get("summary"),
+                },
+                "timestamp": datetime.now().isoformat(),
+            })
+
+            return jsonify({
+                "success": True,
+                "is_medical_query": False,
+                "intent_type": symptom_result.get("intent_type"),
+                "agent_message": symptom_result.get("agent_message"),
+                "symptom_id": None,
+                "analysis": {
+                    "primary_specialization": None,
+                    "confidence_score": 0.0,
+                    "urgency_level": "none",
+                    "extracted_keywords": [],
+                    "summary": symptom_result.get("summary", ""),
+                    "rankings": [],
+                },
+                "recommendation": None,
+                "candidate_doctors": [],
+                "workflow_trace": workflow_trace,
+                "booked_appointment": None,
+            }), 200
+
         primary_spec_name = symptom_result["primary_specialization"]
         confidence_score = symptom_result["confidence_score"]
         urgency_level = symptom_result["urgency_level"]
@@ -116,8 +152,34 @@ def analyze_symptoms_and_recommend():
         # ==========================================
         # STEP 3: Doctor Matching Agent
         # ==========================================
-        match_result = matching_agent.match_doctors(specialization_name=primary_spec_name)
-        matched_doctors = match_result.get("doctors", [])
+        candidate_specs = [primary_spec_name]
+        for r in symptom_result.get("rankings", []):
+            spec_name = r.get("specialization") or r.get("name")
+            if spec_name and spec_name not in candidate_specs:
+                candidate_specs.append(spec_name)
+        if "General Physician" not in candidate_specs:
+            candidate_specs.append("General Physician")
+
+        matched_doctors = []
+        seen_doctor_ids = set()
+        for s_name in candidate_specs:
+            m_res = matching_agent.match_doctors(specialization_name=s_name)
+            for d in m_res.get("doctors", []):
+                if d["id"] not in seen_doctor_ids:
+                    seen_doctor_ids.add(d["id"])
+                    matched_doctors.append(d)
+            if len(matched_doctors) >= 8:
+                break
+
+        # Ensure we have at least 3-4 doctors available for patient choice
+        if len(matched_doctors) < 3:
+            more_docs = matching_agent.match_doctors(specialization_name="General Physician").get("doctors", [])
+            for d in more_docs:
+                if d["id"] not in seen_doctor_ids:
+                    seen_doctor_ids.add(d["id"])
+                    matched_doctors.append(d)
+                if len(matched_doctors) >= 4:
+                    break
 
         workflow_trace.append({
             "step": 3,
@@ -167,6 +229,38 @@ def analyze_symptoms_and_recommend():
         decision_score = decision_result.get("decision_score")
         score_breakdown = decision_result.get("score_breakdown")
         decision_reason = decision_result.get("decision_reason")
+
+        # Format ranked candidates so every candidate doctor has full score & slot details
+        ranked = decision_result.get("ranked_candidates", [])
+        formatted_candidates = []
+        for rc in ranked:
+            doc_data = dict(rc["doctor"])
+            doc_data["earliest_slot"] = rc.get("earliest_slot")
+            doc_data["decision_score"] = rc.get("composite_score")
+            doc_data["score_breakdown"] = rc.get("score_breakdown")
+            doc_data["appointment_load"] = rc.get("appointment_load")
+            is_rec = bool(recommended_doctor and doc_data["id"] == recommended_doctor["id"])
+            doc_data["is_recommended"] = is_rec
+            if is_rec:
+                doc_data["decision_reason"] = decision_reason
+            else:
+                slot_str = (
+                    f"on {doc_data['earliest_slot']['date']} at {doc_data['earliest_slot']['start_time']}"
+                    if doc_data.get("earliest_slot")
+                    else "with flexible schedule options"
+                )
+                candidate_template = load_prompt("decision_candidate_reason.txt")
+                doc_data["decision_reason"] = candidate_template.format(
+                    doctor_name=doc_data.get("full_name", "Doctor"),
+                    specialization_name=doc_data.get("specialization_name", "clinical practice"),
+                    experience_years=doc_data.get("experience_years", 5),
+                    rating=doc_data.get("rating", 4.8),
+                    slot_desc=slot_str
+                )
+            formatted_candidates.append(doc_data)
+
+        if not formatted_candidates:
+            formatted_candidates = [c["doctor"] for c in candidate_packages]
 
         workflow_trace.append({
             "step": 5,
@@ -249,6 +343,7 @@ def analyze_symptoms_and_recommend():
 
         return jsonify({
             "success": True,
+            "is_medical_query": True,
             "symptom_id": symptom_record.id,
             "analysis": {
                 "primary_specialization": primary_spec_name,
@@ -265,7 +360,7 @@ def analyze_symptoms_and_recommend():
                 "score_breakdown": score_breakdown,
                 "decision_reason": decision_reason,
             },
-            "candidate_doctors": [c["doctor"] for c in candidate_packages],
+            "candidate_doctors": formatted_candidates,
             "workflow_trace": workflow_trace,
             "booked_appointment": booked_appointment,
         }), 200

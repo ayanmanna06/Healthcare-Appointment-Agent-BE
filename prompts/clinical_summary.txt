@@ -1,0 +1,1 @@
+Identified primary need for {specialization} with {confidence_percent}% confidence based on detected symptoms: {detected_symptoms}.

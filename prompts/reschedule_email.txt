@@ -1,0 +1,7 @@
+<div style="font-family:sans-serif; padding: 20px; max-width: 600px; margin:0 auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+    <h3 style="color: #0EA5E9;">Appointment Rescheduled</h3>
+    <p>Dear {patient_name},</p>
+    <p>Your appointment with <strong>{clean_doc}</strong> has been rescheduled to:</p>
+    <p><strong>New Date & Time:</strong> {new_date} at {new_time}</p>
+    <p>Thank you for letting us know in advance!</p>
+</div>

@@ -32,5 +32,6 @@ class MedicalNoteSchema(BaseModel):
     appointment_id: int
     diagnosis: str
     prescription: Optional[str] = None
+    prescription_file_url: Optional[str] = None
     clinical_notes: Optional[str] = None
     follow_up_date: Optional[str] = None

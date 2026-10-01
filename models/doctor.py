@@ -29,6 +29,7 @@ class Doctor(db.Model):
             "full_name": self.user.full_name if self.user else None,
             "email": self.user.email if self.user else None,
             "phone": self.user.phone if self.user else None,
+            "is_active": self.user.is_active if self.user else True,
             "specialization_id": self.specialization_id,
             "specialization_name": self.specialization.name if self.specialization else None,
             "qualification": self.qualification,

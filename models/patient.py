@@ -25,10 +25,12 @@ class Patient(db.Model):
             "full_name": self.user.full_name if self.user else None,
             "email": self.user.email if self.user else None,
             "phone": self.user.phone if self.user else None,
+            "is_active": self.user.is_active if self.user else True,
             "date_of_birth": self.date_of_birth.isoformat() if self.date_of_birth else None,
             "gender": self.gender,
             "blood_group": self.blood_group,
             "address": self.address,
             "emergency_contact": self.emergency_contact,
             "medical_history": self.medical_history,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
